@@ -2,10 +2,13 @@ import GoogleTextInput from '@/components/GoogleTextInput'
 import Map from '@/components/Map'
 import RideCard from '@/components/RideCard'
 import { icons, images } from '@/constants'
-import { SignedIn, SignedOut, useUser } from '@clerk/clerk-expo'
-import { Link } from 'expo-router'
+import { useLocationStore } from '@/store'
+import { useUser } from '@clerk/clerk-expo'
+import { useEffect, useState } from 'react'
+import * as Location from 'expo-location'
 import { ActivityIndicator, FlatList, Image, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { router } from 'expo-router'
 
 const recentRides = [
     {
@@ -108,15 +111,59 @@ const recentRides = [
 
 
 export default function Home() {
-    const { user } = useUser()
+    const { setUserLocation, setDestinationLocation } = useLocationStore()
+    const { user, isLoaded } = useUser()
     const insets = useSafeAreaInsets()
-    const loading = true
+    const [loading, setLoading] = useState(true)
+    const [hasPerm, setHasPerm] = useState(false)
 
     const handleSignOut = async () => {
-
+        // Implement your sign out logic
     }
-    const handleDestinationPress = async () => {
 
+    const handleDestinationPress = async (location: { latitude: number, longitude: number, address: string }) => {
+        setDestinationLocation(location)
+        router.push("/(root)/find-ride")
+    }
+
+    useEffect(() => {
+        const requestLocation = async () => {
+            try {
+                setLoading(true)
+                let { status } = await Location.requestForegroundPermissionsAsync()
+
+                if (status !== "granted") {
+                    setHasPerm(false)
+                    return
+                }
+
+                let location = await Location.getCurrentPositionAsync()
+                const address = await Location.reverseGeocodeAsync({
+                    latitude: location.coords.latitude,
+                    longitude: location.coords.longitude,
+                })
+
+                setUserLocation({
+                    latitude: location.coords.latitude,
+                    longitude: location.coords.longitude,
+                    address: `${address[0]?.name || ''},${address[0]?.region || ''}`
+                })
+                setHasPerm(true)
+            } catch (error) {
+                console.error(error)
+            } finally {
+                setLoading(false)
+            }
+        }
+        requestLocation()
+    }, [])
+
+    if (!isLoaded || loading) {
+        return (
+            <View className="flex-1 items-center justify-center">
+                <ActivityIndicator size="large" />
+            </View>
+        )
     }
 
     return (
@@ -131,45 +178,33 @@ export default function Home() {
                 }}
                 ListEmptyComponent={() => (
                     <View className='flex flex-col items-center justify-center'>
-                        {!loading ?
-                            (
-                                <>
-                                    <Image source={images.noResult} alt='No recent rides found' resizeMode='contain' className='w-40 h-40' />
-                                    <Text className='text-sm'>No recent rides found</Text>
-                                </>
-                            )
-                            :
-                            (
-                                <ActivityIndicator size={"small"} color={"#000"} />
-                            )
-                        }
+                        <Image source={images.noResult} alt='No recent rides found' resizeMode='contain' className='w-40 h-40' />
+                        <Text className='text-sm'>No recent rides found</Text>
                     </View>
                 )}
                 ListHeaderComponent={() => (
                     <>
                         <View className='flex flex-row items-center justify-between my-5'>
-                            <Text className='text-xl font-JakartaExtraBold capitalize'>Welcome {user?.firstName || user?.emailAddresses[0].emailAddress.split("@")[0]}</Text>
+                            <Text className='text-xl font-JakartaExtraBold capitalize'>
+                                Welcome {user?.firstName || user?.emailAddresses?.[0]?.emailAddress?.split("@")[0] || 'User'}
+                            </Text>
                             <TouchableOpacity onPress={handleSignOut} className='justify-center items-center w-10 h-10 rounded-full bg-white'>
-                                <Image
-                                    source={icons.out}
-                                    className='w-4 h-4'
-                                />
+                                <Image source={icons.out} className='w-4 h-4' />
                             </TouchableOpacity>
                         </View>
+
                         <GoogleTextInput
                             icon={icons.search}
                             containerStyle="bg-white shadow-md shadow-neutral-300"
                             handlePress={handleDestinationPress}
                         />
 
-                        <>
-                            <Text className='text-xl font-JakartaBold mt-5 mb-3'>
-                                Your Current Location
-                            </Text>
-                            <View className='flex flex-row items-center bg-transparent h-[300px]'>
-                                <Map />
-                            </View>
-                        </>
+                        <Text className='text-xl  font-JakartaBold mb-3'>
+                            Your Current Location
+                        </Text>
+                        <View className='flex flex-row items-centerbg-transparent h-[300px]'>
+                            {hasPerm ? <Map /> : <Text>Location permission not granted</Text>}
+                        </View>
 
                         <Text className='text-xl font-JakartaBold mt-5 mb-3'>
                             Recent Rides
